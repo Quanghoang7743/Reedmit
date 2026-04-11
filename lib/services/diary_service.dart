@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -57,7 +58,43 @@ class DiaryService {
     final safeExt = ext.isEmpty ? 'jpg' : ext;
     final fileName = '${DateTime.now().millisecondsSinceEpoch}.$safeExt';
     final ref = _storage.ref().child('diary_images/$userId/$fileName');
-    await ref.putFile(file);
-    return ref.getDownloadURL();
+
+    final bytes = await file.readAsBytes();
+    final metadata = SettableMetadata(
+      contentType: _contentTypeFromExtension(safeExt),
+    );
+
+    final task = ref.putData(bytes, metadata);
+    await task.whenComplete(() {});
+
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        return await ref.getDownloadURL();
+      } catch (_) {
+        if (attempt == 2) {
+          rethrow;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 450));
+      }
+    }
+
+    throw StateError('Không thể lấy đường dẫn ảnh sau khi tải lên.');
+  }
+
+  String _contentTypeFromExtension(String extension) {
+    final value = extension.toLowerCase();
+    switch (value) {
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'webp':
+        return 'image/webp';
+      case 'heic':
+        return 'image/heic';
+      default:
+        return 'application/octet-stream';
+    }
   }
 }
